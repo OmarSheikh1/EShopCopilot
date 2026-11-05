@@ -1,6 +1,51 @@
 @ApiService_HostAddress = http://localhost:5318
+@ProductId = 10000000-0000-0000-0000-000000000001
 
-GET {{ApiService_HostAddress}}/weatherforecast/
+### Get all products
+GET {{ApiService_HostAddress}}/api/products/
 Accept: application/json
+
+###
+
+### Get a product by ID
+GET {{ApiService_HostAddress}}/api/products/{{ProductId}}
+Accept: application/json
+
+###
+
+### Create a product
+POST {{ApiService_HostAddress}}/api/products/
+Content-Type: application/json
+
+{
+  "name": "USB-C Dock",
+  "description": "Docking station with dual display support.",
+  "sku": "ACC-DCK-006",
+  "price": 129.99,
+  "stockQuantity": 15,
+  "category": "Accessories",
+  "isActive": true
+}
+
+###
+
+### Update a product
+PUT {{ApiService_HostAddress}}/api/products/{{ProductId}}
+Content-Type: application/json
+
+{
+  "name": "Wireless Mouse",
+  "description": "Ergonomic wireless mouse, updated description.",
+  "sku": "ACC-MOU-001",
+  "price": 31.99,
+  "stockQuantity": 40,
+  "category": "Accessories",
+  "isActive": true
+}
+
+###
+
+### Delete a product
+DELETE {{ApiService_HostAddress}}/api/products/{{ProductId}}
 
 ###
