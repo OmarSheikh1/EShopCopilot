@@ -3,6 +3,7 @@
 @inject CartState CartState
 @inject ProductApiClient ProductsClient
 @inject OrderApiClient OrdersClient
+@inject CustomerSession Session
 @inject NavigationManager Navigation
 @inject ILogger<Cart> Logger
 
@@ -243,6 +244,9 @@ else
         try
         {
             var order = await OrdersClient.CheckoutAsync(request, _lifetime.Token);
+            // CHG-20261106-002-MY-ORDERS
+            // Change: Remember the checkout email so My Orders loads without re-entry.
+            Session.SetEmail(request.CustomerEmail);
             var cartChanged = !CartState.TryClear(snapshot.Version);
             Navigation.NavigateTo($"/orders/{order.Id}?cartUpdated={cartChanged}");
         }

@@ -28,4 +28,45 @@ public sealed class OrderApiClient(HttpClient httpClient)
             ? order
             : throw new InvalidDataException("The order service returned an invalid checkout response.");
     }
+
+    // CHG-20261106-002-MY-ORDERS
+    // Purpose: Loads one customer's orders; the email is always sent so other customers' orders are never fetched.
+    public async Task<IReadOnlyList<OrderSummary>> GetOrdersByEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/orders?customerEmail={Uri.EscapeDataString(email)}",
+            cancellationToken);
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            throw ApiClientException.ForOrdersResponse(response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<List<OrderSummary>>(cancellationToken)
+            ?? throw new InvalidDataException("The order service returned an empty order list.");
+    }
+
+    // CHG-20261106-002-MY-ORDERS
+    // Purpose: Loads a single order only when both ID and email match.
+    public async Task<OrderSummary> GetOrderAsync(
+        Guid id,
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/orders/{id}?customerEmail={Uri.EscapeDataString(email)}",
+            cancellationToken);
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            throw ApiClientException.ForOrdersResponse(response.StatusCode);
+        }
+
+        var order = await response.Content.ReadFromJsonAsync<OrderSummary>(cancellationToken);
+        return order is { Id: var orderId } && orderId == id
+            ? order
+            : throw new InvalidDataException("The order service returned an invalid order.");
+    }
 }

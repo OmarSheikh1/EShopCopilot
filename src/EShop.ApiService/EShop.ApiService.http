@@ -140,3 +140,12 @@ Content-Type: application/json
 DELETE {{ApiService_HostAddress}}/api/orders/{{OrderId}}
 
 ###
+### Get orders for a customer (CHG-20261106-002-MY-ORDERS)
+GET {{ApiService_HostAddress}}/api/orders?customerEmail=jordan.lee@example.com
+
+###
+
+### Get one order by ID and customer email (404 when the email does not match)
+GET {{ApiService_HostAddress}}/api/orders/{{OrderId}}?customerEmail=jordan.lee@example.com
+
+###

@@ -49,24 +49,47 @@ public static class OrderEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        orders.MapGet("/", (IOrderService service, CancellationToken cancellationToken) =>
-                TypedResults.Ok(service.GetAll()))
-            .WithName("GetOrders")
-            .WithSummary("Get all orders")
-            .WithDescription("Returns all orders in the in-memory order catalog.")
-            .Produces<IReadOnlyList<OrderResponse>>(StatusCodes.Status200OK);
-
-        orders.MapGet("/{id:guid}", Results<Ok<OrderResponse>, NotFound> (
-                Guid id, IOrderService service, CancellationToken cancellationToken) =>
+        // CHG-20261106-002-MY-ORDERS
+        // Change: Optional customerEmail filter returns only that customer's orders.
+        orders.MapGet("/", Results<Ok<IReadOnlyList<OrderResponse>>, ValidationProblem> (
+                string? customerEmail, IOrderService service, CancellationToken cancellationToken) =>
             {
-                var order = service.GetById(id);
+                if (customerEmail is null)
+                {
+                    return TypedResults.Ok(service.GetAll());
+                }
+
+                return IsValidEmail(customerEmail)
+                    ? TypedResults.Ok(service.GetByCustomerEmail(customerEmail))
+                    : InvalidEmail();
+            })
+            .WithName("GetOrders")
+            .WithSummary("Get orders")
+            .WithDescription("Returns all orders, or only the orders for customerEmail (case-insensitive, newest first) when supplied.")
+            .Produces<IReadOnlyList<OrderResponse>>(StatusCodes.Status200OK)
+            .ProducesValidationProblem();
+
+        // CHG-20261106-002-MY-ORDERS
+        // Change: Optional customerEmail requires both ID and email to match; mismatches return 404.
+        orders.MapGet("/{id:guid}", Results<Ok<OrderResponse>, NotFound, ValidationProblem> (
+                Guid id, string? customerEmail, IOrderService service, CancellationToken cancellationToken) =>
+            {
+                if (customerEmail is not null && !IsValidEmail(customerEmail))
+                {
+                    return InvalidEmail();
+                }
+
+                var order = customerEmail is null
+                    ? service.GetById(id)
+                    : service.GetByIdAndEmail(id, customerEmail);
                 return order is null ? TypedResults.NotFound() : TypedResults.Ok(order);
             })
             .WithName("GetOrderById")
             .WithSummary("Get an order by ID")
-            .WithDescription("Returns one order, or 404 when the ID does not exist.")
+            .WithDescription("Returns one order, or 404 when the ID does not exist or does not belong to customerEmail.")
             .Produces<OrderResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesValidationProblem();
 
         orders.MapPost("/", (CreateOrderRequest request, IOrderService service, CancellationToken cancellationToken) =>
             {
@@ -105,4 +128,13 @@ public static class OrderEndpoints
 
         return app;
     }
+
+    private static bool IsValidEmail(string email) =>
+        email.Length <= 320 && new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email.Trim());
+
+    private static ValidationProblem InvalidEmail() =>
+        TypedResults.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["customerEmail"] = ["A valid customer email is required."]
+        });
 }

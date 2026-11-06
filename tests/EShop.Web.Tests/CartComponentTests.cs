@@ -24,6 +24,7 @@ public sealed class CartComponentTests
         cart.Add(ProductId, 2);
         ConfigureClients(context, HttpStatusCode.Created);
         context.Services.AddSingleton(cart);
+        context.Services.AddSingleton(new CustomerSession());
 
         var component = context.Render<Cart>();
         component.Find("#customer-name").Change("Morgan Ellis");
@@ -42,6 +43,7 @@ public sealed class CartComponentTests
         cart.Add(ProductId, 2);
         ConfigureClients(context, HttpStatusCode.Conflict);
         context.Services.AddSingleton(cart);
+        context.Services.AddSingleton(new CustomerSession());
 
         var component = context.Render<Cart>();
         component.Find("#customer-name").Change("Morgan Ellis");

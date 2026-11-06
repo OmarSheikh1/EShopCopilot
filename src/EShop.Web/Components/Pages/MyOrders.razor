@@ -1,0 +1,149 @@
+@page "/my-orders"
+@implements IDisposable
+@inject OrderApiClient OrdersClient
+@inject CustomerSession Session
+@inject ILogger<MyOrders> Logger
+
+@* CHG-20261106-002-MY-ORDERS
+   Purpose: Lists a customer's orders (looked up by email) with status. *@
+<PageTitle>My Orders</PageTitle>
+
+<h1>My Orders</h1>
+
+<EditForm Model="_form" OnValidSubmit="LookupAsync" class="mb-4">
+    <DataAnnotationsValidator />
+    <div class="mb-3">
+        <label class="form-label" for="lookup-email">Email used at checkout</label>
+        <InputText id="lookup-email" type="email" class="form-control" @bind-Value="_form.Email" disabled="@_isLoading" />
+        <ValidationMessage For="() => _form.Email" />
+    </div>
+    <button class="btn btn-primary" type="submit" disabled="@_isLoading">Show my orders</button>
+</EditForm>
+
+@if (_isLoading)
+{
+    <p role="status">Loading your orders...</p>
+}
+else if (_error is not null)
+{
+    <div class="alert alert-danger" role="alert">@_error</div>
+}
+else if (_orders is not null && _orders.Count == 0)
+{
+    <p role="status">No orders found for @_loadedEmail.</p>
+    <NavLink class="btn btn-primary" href="/products">Continue shopping</NavLink>
+}
+else if (_orders is not null)
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Order</th>
+                    <th scope="col">Placed</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Items</th>
+                    <th scope="col">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in _orders)
+                {
+                    <tr @key="order.Id">
+                        <td>
+                            <NavLink href="@($"/my-orders/{order.Id}?email={Uri.EscapeDataString(_loadedEmail!)}")">
+                                @order.Id.ToString()[..8]
+                            </NavLink>
+                        </td>
+                        <td>@order.CreatedAt.LocalDateTime.ToString("g")</td>
+                        <td><span class="badge @OrderStatusBadge.CssClass(order.Status)">@order.Status</span></td>
+                        <td>
+                            @foreach (var item in order.Items)
+                            {
+                                <div>@item.ProductName × @item.Quantity</div>
+                            }
+                        </td>
+                        <td>@order.TotalAmount.ToString("C")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly LookupForm _form = new();
+    private IReadOnlyList<OrderSummary>? _orders;
+    private string? _loadedEmail;
+    private string? _error;
+    private bool _isLoading;
+    private CancellationTokenSource? _request;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.Email is { } email)
+        {
+            _form.Email = email;
+            await LookupAsync();
+        }
+    }
+
+    private async Task LookupAsync()
+    {
+        _request?.Cancel();
+        _request?.Dispose();
+        _request = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        var token = _request.Token;
+        var email = _form.Email.Trim();
+
+        _isLoading = true;
+        _error = null;
+        _orders = null;
+
+        try
+        {
+            _orders = await OrdersClient.GetOrdersByEmailAsync(email, token);
+            _loadedEmail = email;
+            Session.SetEmail(email);
+        }
+        catch (ApiClientException exception)
+        {
+            _error = exception.Message;
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Could not reach the order API.");
+            _error = "Your orders could not be reached. Please try again.";
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidDataException)
+        {
+            Logger.LogError(exception, "The order API returned unreadable order data.");
+            _error = "Your orders could not be read. Please try again.";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _isLoading = false;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        _request?.Dispose();
+        _lifetime.Dispose();
+    }
+
+    private sealed class LookupForm
+    {
+        [Required, EmailAddress, StringLength(320)]
+        public string Email { get; set; } = string.Empty;
+    }
+}

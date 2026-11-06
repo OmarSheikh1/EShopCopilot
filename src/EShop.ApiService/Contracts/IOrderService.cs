@@ -6,6 +6,12 @@ public interface IOrderService
 
     OrderResponse? GetById(Guid id);
 
+    // CHG-20261106-002-MY-ORDERS
+    // Purpose: Customer-scoped order history and single-order lookup by ID and email.
+    IReadOnlyList<OrderResponse> GetByCustomerEmail(string email);
+
+    OrderResponse? GetByIdAndEmail(Guid id, string email);
+
     OrderResponse Create(CreateOrderRequest request);
 
     // CHG-20261106-001-SHOPPING-CART

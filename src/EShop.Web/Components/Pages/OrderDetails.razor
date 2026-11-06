@@ -1,0 +1,143 @@
+@page "/my-orders/{OrderId:guid}"
+@implements IDisposable
+@inject OrderApiClient OrdersClient
+@inject CustomerSession Session
+@inject ILogger<OrderDetails> Logger
+
+@* CHG-20261106-002-MY-ORDERS
+   Purpose: Shows one order, only when the order ID and customer email both match. *@
+<PageTitle>Order Details</PageTitle>
+
+<h1>Order details</h1>
+
+@if (_needsEmail)
+{
+    <EditForm Model="_form" OnValidSubmit="LoadAsync" class="mb-4">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label" for="order-email">Email used at checkout</label>
+            <InputText id="order-email" type="email" class="form-control" @bind-Value="_form.Email" disabled="@_isLoading" />
+            <ValidationMessage For="() => _form.Email" />
+        </div>
+        <button class="btn btn-primary" type="submit" disabled="@_isLoading">Find order</button>
+    </EditForm>
+}
+
+@if (_isLoading)
+{
+    <p role="status">Loading order...</p>
+}
+else if (_error is not null)
+{
+    <div class="alert alert-danger" role="alert">@_error</div>
+}
+else if (_order is not null)
+{
+    <p>Order ID: <strong>@_order.Id</strong></p>
+    <p>Placed: @_order.CreatedAt.LocalDateTime.ToString("g")</p>
+    <p>Status: <span class="badge @OrderStatusBadge.CssClass(_order.Status)">@_order.Status</span></p>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Price</th>
+                    <th scope="col">Quantity</th>
+                    <th scope="col">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _order.Items)
+                {
+                    <tr @key="item.Id">
+                        <td>@item.ProductName</td>
+                        <td>@item.UnitPrice.ToString("C")</td>
+                        <td>@item.Quantity</td>
+                        <td>@item.LineTotal.ToString("C")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="fs-5 fw-semibold">Total: @_order.TotalAmount.ToString("C")</p>
+}
+
+<NavLink class="btn btn-outline-primary" href="/my-orders">Back to My Orders</NavLink>
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly LookupForm _form = new();
+    private OrderSummary? _order;
+    private string? _error;
+    private bool _isLoading;
+    private bool _needsEmail;
+
+    [Parameter]
+    public Guid OrderId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "email")]
+    public string? Email { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var email = !string.IsNullOrWhiteSpace(Email) ? Email : Session.Email;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _needsEmail = true;
+            return;
+        }
+
+        _form.Email = email;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var email = _form.Email.Trim();
+        _isLoading = true;
+        _error = null;
+        _order = null;
+
+        try
+        {
+            _order = await OrdersClient.GetOrderAsync(OrderId, email, _lifetime.Token);
+            Session.SetEmail(email);
+            _needsEmail = false;
+        }
+        catch (ApiClientException exception)
+        {
+            _error = exception.Message;
+            _needsEmail = true;
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Could not reach the order API.");
+            _error = "The order could not be reached. Please try again.";
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidDataException)
+        {
+            Logger.LogError(exception, "The order API returned unreadable order data.");
+            _error = "The order could not be read. Please try again.";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+
+    private sealed class LookupForm
+    {
+        [Required, EmailAddress, StringLength(320)]
+        public string Email { get; set; } = string.Empty;
+    }
+}

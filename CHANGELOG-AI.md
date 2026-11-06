@@ -58,3 +58,45 @@
 - `dotnet build src\EShop.sln --no-restore` — succeeded; 0 warnings, 0 errors.
 - `dotnet list tests\EShop.Web.Tests\EShop.Web.Tests.csproj package --vulnerable --include-transitive` — no vulnerable packages reported.
 - Aspire AppHost and the `apiservice` and `webfrontend` resources were started and reported healthy during smoke validation. The storefront rendered products and cart state through Aspire service discovery.
+
+## CHG-20261106-002-MY-ORDERS — My Orders
+
+- **Date:** 2026-11-06
+- **Purpose:** Add a "My Orders" nav link, an email-based order history page with status, and single-order lookup by order ID and email.
+- **Prompt:** `/implement-feature : implement the my orders feature`
+- **Plan:** [plans/my-orders.md](plans/my-orders.md)
+
+### Files created
+
+- `src/EShop.Web/Components/Pages/MyOrders.razor`
+- `src/EShop.Web/Components/Pages/OrderDetails.razor`
+- `src/EShop.Web/Components/Shared/OrderStatusBadge.cs`
+- `src/EShop.Web/Contracts/OrderSummary.cs`
+- `src/EShop.Web/Services/CustomerSession.cs`
+- `tests/EShop.ApiService.Tests/OrderHistoryEndpointTests.cs`
+- `tests/EShop.Web.Tests/MyOrdersComponentTests.cs`
+
+### Files modified
+
+- `src/EShop.ApiService/Contracts/IOrderService.cs`
+- `src/EShop.ApiService/Services/OrderService.cs`
+- `src/EShop.ApiService/Endpoints/OrderEndpoints.cs`
+- `src/EShop.ApiService/EShop.ApiService.http`
+- `src/EShop.Web/Services/OrderApiClient.cs`
+- `src/EShop.Web/Services/ApiClientException.cs`
+- `src/EShop.Web/Components/Layout/NavMenu.razor`
+- `src/EShop.Web/Components/Pages/Cart.razor`
+- `src/EShop.Web/Program.cs`
+- `tests/EShop.Web.Tests/CartComponentTests.cs`
+
+### Architectural decisions
+
+- Customers are identified by email (no authentication exists); this is not private, so real auth is a follow-up.
+- Optional `customerEmail` query parameter on existing `GET /api/orders` and `GET /api/orders/{id}`; unfiltered behavior is unchanged.
+- ID/email mismatch returns 404 (same as a missing ID); invalid email returns 400; unknown email returns an empty list.
+- Matching logic lives in `OrderService` (case-insensitive, trimmed, newest first).
+- Web remembers the checkout email in a scoped `CustomerSession`.
+
+### Testing and build results
+
+- `dotnet test src\EShop.sln`: build succeeded; 18 web tests and 13 API tests passed.

@@ -75,6 +75,35 @@ public sealed class OrderService : IOrderService
         }
     }
 
+    // CHG-20261106-002-MY-ORDERS
+    // Purpose: Returns one customer's orders, newest first, matching email case-insensitively.
+    public IReadOnlyList<OrderResponse> GetByCustomerEmail(string email)
+    {
+        lock (_sync)
+        {
+            return _orders.Values
+                .Where(order => EmailMatches(order, email))
+                .OrderByDescending(order => order.CreatedAt)
+                .Select(ToResponse)
+                .ToArray();
+        }
+    }
+
+    // CHG-20261106-002-MY-ORDERS
+    // Purpose: Returns an order only when both ID and customer email match.
+    public OrderResponse? GetByIdAndEmail(Guid id, string email)
+    {
+        lock (_sync)
+        {
+            return _orders.TryGetValue(id, out var order) && EmailMatches(order, email)
+                ? ToResponse(order)
+                : null;
+        }
+    }
+
+    private static bool EmailMatches(Order order, string email) =>
+        string.Equals(order.CustomerEmail.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase);
+
     public OrderResponse Create(CreateOrderRequest request)
     {
         var order = new Order

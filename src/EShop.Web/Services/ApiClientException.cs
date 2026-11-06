@@ -11,6 +11,14 @@ public sealed class ApiClientException(HttpStatusCode statusCode, string message
     public static ApiClientException ForProductResponse(HttpStatusCode statusCode) =>
         new(statusCode, "The product catalog could not be loaded. Please try again.");
 
+    public static ApiClientException ForOrdersResponse(HttpStatusCode statusCode) =>
+        statusCode switch
+        {
+            HttpStatusCode.BadRequest => new(statusCode, "Enter a valid email address."),
+            HttpStatusCode.NotFound => new(statusCode, "Order not found for this email."),
+            _ => new(statusCode, "Your orders could not be loaded. Please try again.")
+        };
+
     public static ApiClientException ForCheckoutResponse(HttpStatusCode statusCode) =>
         statusCode switch
         {
