@@ -1,5 +1,6 @@
 @ApiService_HostAddress = http://localhost:5318
 @ProductId = 10000000-0000-0000-0000-000000000001
+@OrderId = 20000000-0000-0000-0000-000000000001
 
 ### Get all products
 GET {{ApiService_HostAddress}}/api/products/
@@ -47,5 +48,61 @@ Content-Type: application/json
 
 ### Delete a product
 DELETE {{ApiService_HostAddress}}/api/products/{{ProductId}}
+
+###
+
+### Get all orders
+GET {{ApiService_HostAddress}}/api/orders/
+Accept: application/json
+
+###
+
+### Get an order by ID
+GET {{ApiService_HostAddress}}/api/orders/{{OrderId}}
+Accept: application/json
+
+###
+
+### Create an order
+POST {{ApiService_HostAddress}}/api/orders/
+Content-Type: application/json
+
+{
+  "customerName": "Morgan Ellis",
+  "customerEmail": "morgan.ellis@example.com",
+  "items": [
+    {
+      "productId": "10000000-0000-0000-0000-000000000001",
+      "productName": "Wireless Mouse",
+      "quantity": 2,
+      "unitPrice": 29.99
+    }
+  ]
+}
+
+###
+
+### Update an order
+PUT {{ApiService_HostAddress}}/api/orders/{{OrderId}}
+Content-Type: application/json
+
+{
+  "customerName": "Jordan Lee",
+  "customerEmail": "jordan.lee@example.com",
+  "status": "Confirmed",
+  "items": [
+    {
+      "productId": "10000000-0000-0000-0000-000000000001",
+      "productName": "Wireless Mouse",
+      "quantity": 3,
+      "unitPrice": 29.99
+    }
+  ]
+}
+
+###
+
+### Delete an order
+DELETE {{ApiService_HostAddress}}/api/orders/{{OrderId}}
 
 ###

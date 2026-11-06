@@ -1,7 +1,6 @@
 ---
 name: instructions-generator
-description: Creates and updates reusable domain implementation standards for this .NET Aspire solution.
-argument-hint: Describe the coding convention you want to establish or change
+description: Creates and updates reusable domain implementation standards for this .NET Aspire solution./
 ---
 
 # Instructions Generator
