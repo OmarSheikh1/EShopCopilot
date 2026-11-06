@@ -1,0 +1,23 @@
+@implements IDisposable
+@inject CartState Cart
+
+@* CHG-20261106-001-SHOPPING-CART
+   Purpose: Shows the current circuit's cart count in the shared navigation. *@
+<NavLink class="nav-link" href="/cart">
+    <span class="bi bi-cart" aria-hidden="true"></span>
+    Cart <span class="badge text-bg-secondary">@Cart.ItemCount</span>
+</NavLink>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Cart.Changed += OnCartChanged;
+    }
+
+    private void OnCartChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Cart.Changed -= OnCartChanged;
+    }
+}

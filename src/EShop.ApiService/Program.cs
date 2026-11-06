@@ -35,3 +35,9 @@ app.MapProductEndpoints();
 app.MapOrderEndpoints();
 
 app.Run();
+
+// CHG-20261106-001-SHOPPING-CART
+// Purpose: Makes the API entry point available to integration-test hosting.
+public partial class Program
+{
+}

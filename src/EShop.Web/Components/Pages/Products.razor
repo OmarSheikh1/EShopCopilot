@@ -1,0 +1,135 @@
+@page "/products"
+@implements IDisposable
+@inject ProductApiClient ProductsClient
+@inject CartState Cart
+@inject ILogger<Products> Logger
+
+@* CHG-20261106-001-SHOPPING-CART
+   Purpose: Lists active products and lets shoppers add available quantities to their cart. *@
+<PageTitle>Products</PageTitle>
+
+<h1>Products</h1>
+
+@if (_isLoading)
+{
+    <p role="status">Loading products...</p>
+}
+else if (_loadError is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        @_loadError
+        <button class="btn btn-link" @onclick="LoadProductsAsync">Try again</button>
+    </div>
+}
+else if (_products.Count == 0)
+{
+    <p>No products are currently available.</p>
+}
+else
+{
+    @if (_cartMessage is not null)
+    {
+        <p class="alert alert-info" role="status">@_cartMessage</p>
+    }
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+        @foreach (var product in _products)
+        {
+            <div class="col" @key="product.Id">
+                <article class="card h-100">
+                    <div class="card-body">
+                        <h2 class="h5 card-title">@product.Name</h2>
+                        <p class="card-text">@product.Description</p>
+                        <p class="mb-1">@product.Category</p>
+                        <p class="fw-semibold">@product.Price.ToString("C")</p>
+                        <p class="text-body-secondary">
+                            @(product.StockQuantity == 1 ? "1 in stock" : $"{product.StockQuantity} in stock")
+                        </p>
+                        <button class="btn btn-primary"
+                                disabled="@(!product.IsActive || product.StockQuantity <= CartedQuantity(product.Id))"
+                                @onclick="() => AddToCart(product)">
+                            @(product.StockQuantity <= CartedQuantity(product.Id) ? "Stock limit reached" : "Add to cart")
+                        </button>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private IReadOnlyList<ProductSummary> _products = [];
+    private bool _isLoading = true;
+    private string? _loadError;
+    private string? _cartMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProductsAsync();
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            _products = (await ProductsClient.GetProductsAsync(_lifetime.Token))
+                .Where(product => product.IsActive)
+                .OrderBy(product => product.Category)
+                .ThenBy(product => product.Name)
+                .ToArray();
+        }
+        catch (ApiClientException exception)
+        {
+            _loadError = exception.Message;
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Could not load products from the API.");
+            _loadError = "The product catalog could not be reached. Please try again.";
+        }
+        catch (System.Text.Json.JsonException exception)
+        {
+            Logger.LogError(exception, "The product API returned unreadable product data.");
+            _loadError = "Product details could not be read. Please try again.";
+        }
+        catch (InvalidDataException exception)
+        {
+            Logger.LogError(exception, "The product API returned an empty response.");
+            _loadError = "Product details could not be read. Please try again.";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private int CartedQuantity(Guid productId) =>
+        Cart.GetSnapshot().Items
+            .FirstOrDefault(item => item.ProductId == productId)?.Quantity ?? 0;
+
+    private void AddToCart(ProductSummary product)
+    {
+        if (!product.IsActive || CartedQuantity(product.Id) >= product.StockQuantity)
+        {
+            _cartMessage = "The requested quantity is not currently available.";
+            return;
+        }
+
+        Cart.Add(product.Id);
+        _cartMessage = $"{product.Name} added to your cart.";
+    }
+
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using EShop.ApiService.Contracts;
 using EShop.ApiService.Services;
 
@@ -10,6 +11,43 @@ public static class OrderEndpoints
     {
         var orders = app.MapGroup("/api/orders")
             .WithTags("Orders");
+
+        // CHG-20261106-001-SHOPPING-CART
+        // Purpose: Exposes checkout without accepting client-supplied product pricing.
+        orders.MapPost("/checkout", Results<Created<OrderResponse>, NotFound, Conflict<ProblemDetails>> (
+                CheckoutOrderRequest request, IOrderService service, CancellationToken cancellationToken) =>
+            {
+                var result = service.Checkout(request);
+                if (result.Order is { } order)
+                {
+                    return TypedResults.Created($"/api/orders/{order.Id}", order);
+                }
+
+                return result.Failure switch
+                {
+                    CheckoutFailure.ProductNotFound => TypedResults.NotFound(),
+                    CheckoutFailure.ProductUnavailable => TypedResults.Conflict(new ProblemDetails
+                    {
+                        Status = StatusCodes.Status409Conflict,
+                        Title = "Product unavailable",
+                        Detail = "One or more products in the cart are no longer available."
+                    }),
+                    CheckoutFailure.InsufficientStock => TypedResults.Conflict(new ProblemDetails
+                    {
+                        Status = StatusCodes.Status409Conflict,
+                        Title = "Insufficient stock",
+                        Detail = "One or more quantities exceed the available stock."
+                    }),
+                    _ => throw new InvalidOperationException("Checkout returned neither an order nor a failure.")
+                };
+            })
+            .WithName("CheckoutOrder")
+            .WithSummary("Create an order from the shopping cart")
+            .WithDescription("Validates product availability and uses current server-side product names and prices.")
+            .Produces<OrderResponse>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         orders.MapGet("/", (IOrderService service, CancellationToken cancellationToken) =>
                 TypedResults.Ok(service.GetAll()))

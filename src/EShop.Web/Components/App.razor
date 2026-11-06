@@ -10,11 +10,13 @@
     <link rel="stylesheet" href="@Assets["EShop.Web.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet />
+    @* CHG-20261106-001-SHOPPING-CART
+       Change: Enables interactive routes and page metadata for the cart experience. *@
+    <HeadOutlet @rendermode="new InteractiveServerRenderMode(prerender: false)" />
 </head>
 
 <body>
-    <Routes />
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

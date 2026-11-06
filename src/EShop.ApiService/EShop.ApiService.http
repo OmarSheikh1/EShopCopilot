@@ -57,6 +57,40 @@ Accept: application/json
 
 ###
 
+### CHG-20261106-001-SHOPPING-CART: Checkout uses current server-side product data
+POST {{ApiService_HostAddress}}/api/orders/checkout
+Content-Type: application/json
+
+{
+  "customerName": "Morgan Ellis",
+  "customerEmail": "morgan.ellis@example.com",
+  "items": [
+    {
+      "productId": "{{ProductId}}",
+      "quantity": 2
+    }
+  ]
+}
+
+###
+
+### Invalid checkout (unknown product returns 404; cart is not modified)
+POST {{ApiService_HostAddress}}/api/orders/checkout
+Content-Type: application/json
+
+{
+  "customerName": "Morgan Ellis",
+  "customerEmail": "morgan.ellis@example.com",
+  "items": [
+    {
+      "productId": "00000000-0000-0000-0000-000000000000",
+      "quantity": 1
+    }
+  ]
+}
+
+###
+
 ### Get an order by ID
 GET {{ApiService_HostAddress}}/api/orders/{{OrderId}}
 Accept: application/json

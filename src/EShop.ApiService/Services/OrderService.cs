@@ -7,9 +7,13 @@ public sealed class OrderService : IOrderService
 {
     private readonly object _sync = new();
     private readonly Dictionary<Guid, Order> _orders;
+    private readonly IProductService _productService;
 
-    public OrderService()
+    // CHG-20261106-001-SHOPPING-CART
+    // Change: Resolves authoritative product information during checkout.
+    public OrderService(IProductService productService)
     {
+        _productService = productService;
         var orders = new[]
         {
             CreateSeedOrder(
@@ -85,6 +89,48 @@ public sealed class OrderService : IOrderService
             _orders.Add(order.Id, order);
             return ToResponse(order);
         }
+    }
+
+    // CHG-20261106-001-SHOPPING-CART
+    // Purpose: Validates the complete cart before creating an order with server-owned prices and names.
+    public CheckoutOrderResult Checkout(CheckoutOrderRequest request)
+    {
+        var orderItems = new List<OrderItemRequest>(request.Items.Count);
+        foreach (var item in request.Items)
+        {
+            var product = _productService.GetById(item.ProductId);
+            if (product is null)
+            {
+                return new CheckoutOrderResult(null, CheckoutFailure.ProductNotFound);
+            }
+
+            if (!product.IsActive)
+            {
+                return new CheckoutOrderResult(null, CheckoutFailure.ProductUnavailable);
+            }
+
+            if (item.Quantity > product.StockQuantity)
+            {
+                return new CheckoutOrderResult(null, CheckoutFailure.InsufficientStock);
+            }
+
+            orderItems.Add(new OrderItemRequest
+            {
+                ProductId = product.Id,
+                ProductName = product.Name,
+                Quantity = item.Quantity,
+                UnitPrice = product.Price
+            });
+        }
+
+        var order = Create(new CreateOrderRequest
+        {
+            CustomerName = request.CustomerName,
+            CustomerEmail = request.CustomerEmail,
+            Items = orderItems
+        });
+
+        return new CheckoutOrderResult(order, null);
     }
 
     public OrderResponse? Update(Guid id, UpdateOrderRequest request)

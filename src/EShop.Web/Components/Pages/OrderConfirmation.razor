@@ -1,0 +1,24 @@
+@page "/orders/{OrderId:guid}"
+
+@* CHG-20261106-001-SHOPPING-CART
+   Purpose: Confirms successful checkout using the order ID returned by the API. *@
+<PageTitle>Order Confirmation</PageTitle>
+
+<h1>Order confirmed</h1>
+<p>Thank you. Your order was created successfully.</p>
+<p>Order ID: <strong>@OrderId</strong></p>
+@if (CartUpdated)
+{
+    <p class="alert alert-info" role="status">
+        Your cart changed while checkout was processing, so those newer items remain in your cart.
+    </p>
+}
+<NavLink class="btn btn-primary" href="/products">Continue shopping</NavLink>
+
+@code {
+    [Parameter]
+    public Guid OrderId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "cartUpdated")]
+    public bool CartUpdated { get; set; }
+}

@@ -1,0 +1,304 @@
+@page "/cart"
+@implements IDisposable
+@inject CartState CartState
+@inject ProductApiClient ProductsClient
+@inject OrderApiClient OrdersClient
+@inject NavigationManager Navigation
+@inject ILogger<Cart> Logger
+
+@* CHG-20261106-001-SHOPPING-CART
+   Purpose: Supports cart editing and checkout while preserving cart contents on failure. *@
+<PageTitle>Shopping Cart</PageTitle>
+
+<h1>Shopping Cart</h1>
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        @_loadError
+        <button class="btn btn-link" @onclick="LoadProductsAsync" disabled="@_isLoading">Try again</button>
+    </div>
+}
+
+@if (_isLoading)
+{
+    <p role="status">Loading cart details...</p>
+}
+else if (_snapshot.Items.Count == 0)
+{
+    <p>Your cart is empty.</p>
+    <NavLink class="btn btn-primary" href="/products">Browse products</NavLink>
+}
+else
+{
+    @if (_cartActionError is not null)
+    {
+        <div class="alert alert-warning" role="alert">@_cartActionError</div>
+    }
+
+    @if (_checkoutError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_checkoutError</div>
+    }
+
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Price</th>
+                    <th scope="col">Quantity</th>
+                    <th scope="col">Subtotal</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _snapshot.Items)
+                {
+                    <tr @key="line.ProductId">
+                        @if (_productsById.TryGetValue(line.ProductId, out var product))
+                        {
+                            <td>
+                                @product.Name
+                                @if (!product.IsActive)
+                                {
+                                    <span class="badge text-bg-warning">Unavailable</span>
+                                }
+                                else if (line.Quantity > product.StockQuantity)
+                                {
+                                    <span class="badge text-bg-warning">Only @product.StockQuantity in stock</span>
+                                }
+                            </td>
+                            <td>@product.Price.ToString("C")</td>
+                            <td>
+                                <label class="visually-hidden" for="@($"quantity-{line.ProductId}")">
+                                    Quantity for @product.Name
+                                </label>
+                                <input id="@($"quantity-{line.ProductId}")"
+                                       class="form-control"
+                                       type="number"
+                                       min="1"
+                                       max="@product.StockQuantity"
+                                       value="@line.Quantity"
+                                       disabled="@_isSubmitting"
+                                       @onchange="eventArgs => UpdateQuantity(line.ProductId, product, eventArgs.Value?.ToString())" />
+                            </td>
+                            <td>@((product.Price * line.Quantity).ToString("C"))</td>
+                        }
+                        else
+                        {
+                            <td>Product unavailable</td>
+                            <td>—</td>
+                            <td>@line.Quantity</td>
+                            <td>—</td>
+                        }
+                        <td>
+                            <button class="btn btn-outline-danger"
+                                    disabled="@_isSubmitting"
+                                    @onclick="() => RemoveFromCart(line.ProductId)">
+                                Remove
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <p class="fs-5 fw-semibold">Total: @CartState.GetTotal(_products).ToString("C")</p>
+
+    <h2 class="h4 mt-4">Checkout</h2>
+    <EditForm Model="_checkoutForm" OnValidSubmit="CheckoutAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="mb-3">
+            <label class="form-label" for="customer-name">Name</label>
+            <InputText id="customer-name" class="form-control" @bind-Value="_checkoutForm.CustomerName" disabled="@_isSubmitting" />
+            <ValidationMessage For="() => _checkoutForm.CustomerName" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="customer-email">Email</label>
+            <InputText id="customer-email" type="email" class="form-control" @bind-Value="_checkoutForm.CustomerEmail" disabled="@_isSubmitting" />
+            <ValidationMessage For="() => _checkoutForm.CustomerEmail" />
+        </div>
+        <button class="btn btn-success"
+                type="submit"
+                disabled="@(!CanCheckout || _isSubmitting)">
+            @(_isSubmitting ? "Submitting order..." : "Place order")
+        </button>
+    </EditForm>
+}
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly CheckoutFormModel _checkoutForm = new();
+    private CartSnapshot _snapshot = new(0, []);
+    private IReadOnlyList<ProductSummary> _products = [];
+    private Dictionary<Guid, ProductSummary> _productsById = [];
+    private bool _isLoading = true;
+    private bool _isSubmitting;
+    private string? _loadError;
+    private string? _cartActionError;
+    private string? _checkoutError;
+
+    private bool CanCheckout =>
+        !_isLoading &&
+        _loadError is null &&
+        _snapshot.Items.Count > 0 &&
+        _snapshot.Items.All(item =>
+            _productsById.TryGetValue(item.ProductId, out var product) &&
+            product.IsActive &&
+            item.Quantity <= product.StockQuantity);
+
+    protected override async Task OnInitializedAsync()
+    {
+        CartState.Changed += OnCartChanged;
+        _snapshot = CartState.GetSnapshot();
+        await LoadProductsAsync();
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            _products = await ProductsClient.GetProductsAsync(_lifetime.Token);
+            _productsById = _products.ToDictionary(product => product.Id);
+        }
+        catch (ApiClientException exception)
+        {
+            _loadError = exception.Message;
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Could not load product details for the cart.");
+            _loadError = "Cart product details could not be reached. Please try again.";
+        }
+        catch (System.Text.Json.JsonException exception)
+        {
+            Logger.LogError(exception, "The product API returned unreadable product data for the cart.");
+            _loadError = "Cart product details could not be read. Please try again.";
+        }
+        catch (InvalidDataException exception)
+        {
+            Logger.LogError(exception, "The product API returned an empty response for the cart.");
+            _loadError = "Cart product details could not be read. Please try again.";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void UpdateQuantity(Guid productId, ProductSummary product, string? value)
+    {
+        if (!int.TryParse(value, out var quantity) || quantity < 1)
+        {
+            _cartActionError = "Enter a quantity of at least one.";
+            return;
+        }
+
+        if (quantity > product.StockQuantity)
+        {
+            _cartActionError = $"Only {product.StockQuantity} of {product.Name} are currently available.";
+            return;
+        }
+
+        CartState.SetQuantity(productId, quantity);
+        _cartActionError = null;
+        _checkoutError = null;
+    }
+
+    private void RemoveFromCart(Guid productId)
+    {
+        CartState.Remove(productId);
+        _cartActionError = null;
+        _checkoutError = null;
+    }
+
+    private async Task CheckoutAsync()
+    {
+        var snapshot = CartState.GetSnapshot();
+        if (snapshot.Items.Count == 0)
+        {
+            _checkoutError = "Add at least one product before checkout.";
+            return;
+        }
+
+        _isSubmitting = true;
+        _checkoutError = null;
+        var request = new CheckoutOrderRequest(
+            _checkoutForm.CustomerName.Trim(),
+            _checkoutForm.CustomerEmail.Trim(),
+            snapshot.Items
+                .Select(item => new CheckoutOrderItemRequest(item.ProductId, item.Quantity))
+                .ToArray());
+
+        try
+        {
+            var order = await OrdersClient.CheckoutAsync(request, _lifetime.Token);
+            var cartChanged = !CartState.TryClear(snapshot.Version);
+            Navigation.NavigateTo($"/orders/{order.Id}?cartUpdated={cartChanged}");
+        }
+        catch (ApiClientException exception)
+        {
+            _checkoutError = exception.Message;
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Checkout could not reach the order API.");
+            _checkoutError = "Checkout could not be reached. Your cart has been kept.";
+        }
+        catch (InvalidDataException exception)
+        {
+            Logger.LogError(exception, "Checkout returned an invalid order response.");
+            _checkoutError = "The order response could not be verified. Your cart has been kept.";
+        }
+        catch (System.Text.Json.JsonException exception)
+        {
+            Logger.LogError(exception, "Checkout returned an unreadable order response.");
+            _checkoutError = "The order response could not be verified. Your cart has been kept.";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private void OnCartChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _snapshot = CartState.GetSnapshot();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        CartState.Changed -= OnCartChanged;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+
+    // CHG-20261106-001-SHOPPING-CART
+    // Purpose: Holds editable customer fields separately from the immutable API request.
+    private sealed class CheckoutFormModel
+    {
+        [Required, StringLength(200)]
+        public string CustomerName { get; set; } = string.Empty;
+
+        [Required, EmailAddress, StringLength(320)]
+        public string CustomerEmail { get; set; } = string.Empty;
+    }
+}
