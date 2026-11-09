@@ -100,3 +100,91 @@
 ### Testing and build results
 
 - `dotnet test src\EShop.sln`: build succeeded; 18 web tests and 13 API tests passed.
+
+## CHG-20261106-003-DATABASE-INFRASTRUCTURE — EF Core and SQLite persistence
+
+- **Date:** 2026-11-08
+- **Purpose:** Replace transient product and order dictionaries with persistent SQLite storage while preserving API behavior and seeded IDs.
+- **Prompt:** "implement the database operations as planned"
+- **Plan:** [plans/README-DATABASE-INFRASTRUCTURE.md](plans/README-DATABASE-INFRASTRUCTURE.md)
+
+### Files created
+
+- `src/EShop.Infrastructure/EShop.Infrastructure.csproj`
+- `src/EShop.Infrastructure/Data/EShopDbContext.cs`
+- `src/EShop.Infrastructure/Data/EShopDbContextFactory.cs`
+- `src/EShop.Infrastructure/Data/DatabaseHealthCheck.cs`
+- `src/EShop.Infrastructure/Data/Configurations/ProductEntityConfiguration.cs`
+- `src/EShop.Infrastructure/Data/Configurations/OrderEntityConfiguration.cs`
+- `src/EShop.Infrastructure/Data/Configurations/OrderItemEntityConfiguration.cs`
+- `src/EShop.Infrastructure/Data/Configurations/SeedData.cs`
+- `src/EShop.Infrastructure/Data/Migrations/20261109044609_InitialCreate.cs`
+- `src/EShop.Infrastructure/Data/Migrations/20261109044609_InitialCreate.Designer.cs`
+- `src/EShop.Infrastructure/Data/Migrations/EShopDbContextModelSnapshot.cs`
+- `src/EShop.Infrastructure/Models/IAuditableEntity.cs`
+- `src/EShop.Infrastructure/Models/Product.cs`
+- `src/EShop.Infrastructure/Models/Order.cs`
+- `src/EShop.Infrastructure/Models/OrderItem.cs`
+- `src/EShop.Infrastructure/Repositories/IRepository.cs`
+- `src/EShop.Infrastructure/Repositories/Repository.cs`
+- `src/EShop.Infrastructure/Repositories/IUnitOfWork.cs`
+- `src/EShop.Infrastructure/Repositories/UnitOfWork.cs`
+- `src/EShop.Infrastructure/Repositories/Product/IProductRepository.cs`
+- `src/EShop.Infrastructure/Repositories/Product/ProductRepository.cs`
+- `src/EShop.Infrastructure/Repositories/Order/IOrderRepository.cs`
+- `src/EShop.Infrastructure/Repositories/Order/OrderRepository.cs`
+- `src/EShop.Infrastructure/Repositories/OrderItem/IOrderItemRepository.cs`
+- `src/EShop.Infrastructure/Repositories/OrderItem/OrderItemRepository.cs`
+- `src/EShop.Infrastructure/Repositories/Specifications/ISpecification.cs`
+- `src/EShop.Infrastructure/Repositories/Specifications/Specification.cs`
+- `src/EShop.Infrastructure/Repositories/Specifications/ProductSpecifications.cs`
+- `src/EShop.Infrastructure/Repositories/Specifications/OrderSpecifications.cs`
+- `src/EShop.Infrastructure/Filters/FilterOptions.cs`
+- `src/EShop.Infrastructure/Filters/QueryFilterHelper.cs`
+- `src/EShop.Infrastructure/ServiceCollectionExtensions.cs`
+- `src/EShop.ApiService/Middleware/DatabaseConcurrencyExceptionHandler.cs`
+- `tests/EShop.ApiService.Tests/DatabaseTestApplicationFactory.cs`
+- `tests/EShop.ApiService.Tests/DatabasePersistenceTests.cs`
+- `MIGRATION.md`
+
+### Files modified
+
+- `.gitignore`
+- `CHANGELOG-AI.md`
+- `README.md`
+- `src/EShop.sln`
+- `src/EShop.AppHost/AppHost.cs`
+- `src/EShop.ApiService/EShop.ApiService.csproj`
+- `src/EShop.ApiService/Program.cs`
+- `src/EShop.ApiService/appsettings.json`
+- `src/EShop.ApiService/Contracts/IProductService.cs`
+- `src/EShop.ApiService/Contracts/IOrderService.cs`
+- `src/EShop.ApiService/Endpoints/ProductEndpoints.cs`
+- `src/EShop.ApiService/Endpoints/OrderEndpoints.cs`
+- `src/EShop.ApiService/Services/ProductService.cs`
+- `src/EShop.ApiService/Services/OrderService.cs`
+- `src/EShop.ApiService/EShop.ApiService.http`
+- `src/EShop.ServiceDefaults/Extensions.cs`
+- `tests/EShop.ApiService.Tests/CheckoutEndpointTests.cs`
+- `tests/EShop.ApiService.Tests/OrderHistoryEndpointTests.cs`
+
+### Files moved
+
+- `src/EShop.ApiService/Models/Product.cs` → `src/EShop.Infrastructure/Models/Product.cs`
+- `src/EShop.ApiService/Models/Order.cs` → `src/EShop.Infrastructure/Models/Order.cs`
+- `src/EShop.ApiService/Models/OrderItem.cs` → `src/EShop.Infrastructure/Models/OrderItem.cs`
+
+### Architectural decisions
+
+- Added the EF Core SQLite Infrastructure project with migrations, repositories, specifications, a Unit of Work, query filters, and a database readiness check. Existing API DTOs and routes remain unchanged; service and endpoint calls are asynchronous and cancellation-aware.
+- The initial migration seeds the existing five products and five orders with their stable IDs. SQLite files are resolved relative to the API content root by default; Aspire forwards the configurable connection string.
+- Product and order concurrency use integer version tokens because SQLite has no auto-generated `rowversion`. Order items cascade with their parent; `ProductId` remains a historical reference rather than a foreign key so product deletion does not break past orders.
+- Each integration test uses a separate SQLite file except the persistence test, which deliberately restarts the API against the same file.
+
+### Testing and build results
+
+- `dotnet test src\EShop.sln --no-restore` — passed; 34 tests, 0 failures.
+- `dotnet build src\EShop.sln --no-restore` — succeeded; 0 warnings, 0 errors.
+- EF migration snapshot check — no model changes pending.
+- `dotnet list src\EShop.sln package --vulnerable --include-transitive` — no vulnerable packages reported.
+- API integration tests verify CRUD, seed data, restart persistence, concurrency, health, OpenAPI, and SQL search/sort/paging.

@@ -88,6 +88,9 @@ project.fragment.lock.json
 artifacts/
 .artifacts/
 
+# CHG-20261106-003-DATABASE-INFRASTRUCTURE
+src/EShop.ApiService/eshop.db*
+
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 

@@ -1,133 +1,72 @@
 using EShop.ApiService.Contracts;
 using EShop.ApiService.Models;
+using EShop.Infrastructure.Repositories;
 
 namespace EShop.ApiService.Services;
 
-public sealed class OrderService : IOrderService
+// CHG-20261106-003-DATABASE-INFRASTRUCTURE
+// Purpose: Implements customer order operations and checkout over persistent repositories.
+public sealed class OrderService(IUnitOfWork unitOfWork) : IOrderService
 {
-    private readonly object _sync = new();
-    private readonly Dictionary<Guid, Order> _orders;
-    private readonly IProductService _productService;
+    public async Task<IReadOnlyList<OrderResponse>> GetAllAsync(
+        CancellationToken cancellationToken) =>
+        (await unitOfWork.Orders.GetAllWithItemsAsync(cancellationToken))
+        .Select(ToResponse)
+        .ToArray();
 
-    // CHG-20261106-001-SHOPPING-CART
-    // Change: Resolves authoritative product information during checkout.
-    public OrderService(IProductService productService)
+    public async Task<OrderResponse?> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken)
     {
-        _productService = productService;
-        var orders = new[]
-        {
-            CreateSeedOrder(
-                "20000000-0000-0000-0000-000000000001",
-                "Jordan Lee",
-                "jordan.lee@example.com",
-                OrderStatus.Confirmed,
-                7,
-                ("10000000-0000-0000-0000-000000000001", "Wireless Mouse", 2, 29.99m),
-                ("10000000-0000-0000-0000-000000000002", "Mechanical Keyboard", 1, 89.50m)),
-            CreateSeedOrder(
-                "20000000-0000-0000-0000-000000000002",
-                "Taylor Morgan",
-                "taylor.morgan@example.com",
-                OrderStatus.Shipped,
-                5,
-                ("10000000-0000-0000-0000-000000000004", "27-inch Monitor", 1, 279.00m)),
-            CreateSeedOrder(
-                "20000000-0000-0000-0000-000000000003",
-                "Casey Patel",
-                "casey.patel@example.com",
-                OrderStatus.Pending,
-                2,
-                ("10000000-0000-0000-0000-000000000003", "USB-C Hub", 1, 54.00m),
-                ("10000000-0000-0000-0000-000000000005", "Laptop Stand", 1, 39.95m)),
-            CreateSeedOrder(
-                "20000000-0000-0000-0000-000000000004",
-                "Riley Chen",
-                "riley.chen@example.com",
-                OrderStatus.Delivered,
-                12,
-                ("10000000-0000-0000-0000-000000000002", "Mechanical Keyboard", 1, 89.50m),
-                ("10000000-0000-0000-0000-000000000003", "USB-C Hub", 1, 54.00m)),
-            CreateSeedOrder(
-                "20000000-0000-0000-0000-000000000005",
-                "Avery Brooks",
-                "avery.brooks@example.com",
-                OrderStatus.Cancelled,
-                1,
-                ("10000000-0000-0000-0000-000000000001", "Wireless Mouse", 1, 29.99m))
-        };
-
-        _orders = orders.ToDictionary(order => order.Id);
-    }
-
-    public IReadOnlyList<OrderResponse> GetAll()
-    {
-        lock (_sync)
-        {
-            return _orders.Values.Select(ToResponse).ToArray();
-        }
-    }
-
-    public OrderResponse? GetById(Guid id)
-    {
-        lock (_sync)
-        {
-            return _orders.TryGetValue(id, out var order) ? ToResponse(order) : null;
-        }
+        var order = await unitOfWork.Orders.GetByIdWithItemsAsync(id, cancellationToken);
+        return order is null ? null : ToResponse(order);
     }
 
     // CHG-20261106-002-MY-ORDERS
-    // Purpose: Returns one customer's orders, newest first, matching email case-insensitively.
-    public IReadOnlyList<OrderResponse> GetByCustomerEmail(string email)
-    {
-        lock (_sync)
-        {
-            return _orders.Values
-                .Where(order => EmailMatches(order, email))
-                .OrderByDescending(order => order.CreatedAt)
-                .Select(ToResponse)
-                .ToArray();
-        }
-    }
+    // Change: Keeps customer matching case-insensitive while querying the database.
+    public async Task<IReadOnlyList<OrderResponse>> GetByCustomerEmailAsync(
+        string email,
+        CancellationToken cancellationToken) =>
+        (await unitOfWork.Orders.GetByCustomerEmailAsync(email, cancellationToken))
+        .Select(ToResponse)
+        .ToArray();
 
     // CHG-20261106-002-MY-ORDERS
-    // Purpose: Returns an order only when both ID and customer email match.
-    public OrderResponse? GetByIdAndEmail(Guid id, string email)
+    // Change: Preserves ID-and-email ownership matching after persistence is introduced.
+    public async Task<OrderResponse?> GetByIdAndEmailAsync(
+        Guid id,
+        string email,
+        CancellationToken cancellationToken)
     {
-        lock (_sync)
-        {
-            return _orders.TryGetValue(id, out var order) && EmailMatches(order, email)
-                ? ToResponse(order)
-                : null;
-        }
+        var order = await unitOfWork.Orders.GetByIdWithItemsAsync(id, cancellationToken);
+        return order is not null && EmailMatches(order, email)
+            ? ToResponse(order)
+            : null;
     }
 
-    private static bool EmailMatches(Order order, string email) =>
-        string.Equals(order.CustomerEmail.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase);
-
-    public OrderResponse Create(CreateOrderRequest request)
+    public async Task<OrderResponse> CreateAsync(
+        CreateOrderRequest request,
+        CancellationToken cancellationToken)
     {
-        var order = new Order
-        {
-            CustomerName = request.CustomerName,
-            CustomerEmail = request.CustomerEmail,
-            Items = request.Items.Select(ToModel).ToList()
-        };
-
-        lock (_sync)
-        {
-            _orders.Add(order.Id, order);
-            return ToResponse(order);
-        }
+        var order = CreateOrder(
+            request.CustomerName,
+            request.CustomerEmail,
+            request.Items);
+        await unitOfWork.Orders.AddAsync(order, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return ToResponse(order);
     }
 
     // CHG-20261106-001-SHOPPING-CART
-    // Purpose: Validates the complete cart before creating an order with server-owned prices and names.
-    public CheckoutOrderResult Checkout(CheckoutOrderRequest request)
+    // Change: Persists a checkout only after all current product data has been validated.
+    public async Task<CheckoutOrderResult> CheckoutAsync(
+        CheckoutOrderRequest request,
+        CancellationToken cancellationToken)
     {
         var orderItems = new List<OrderItemRequest>(request.Items.Count);
         foreach (var item in request.Items)
         {
-            var product = _productService.GetById(item.ProductId);
+            var product = await unitOfWork.Products.GetByIdAsync(item.ProductId, cancellationToken);
             if (product is null)
             {
                 return new CheckoutOrderResult(null, CheckoutFailure.ProductNotFound);
@@ -152,80 +91,99 @@ public sealed class OrderService : IOrderService
             });
         }
 
-        var order = Create(new CreateOrderRequest
-        {
-            CustomerName = request.CustomerName,
-            CustomerEmail = request.CustomerEmail,
-            Items = orderItems
-        });
-
-        return new CheckoutOrderResult(order, null);
+        var order = CreateOrder(
+            request.CustomerName,
+            request.CustomerEmail,
+            orderItems);
+        await unitOfWork.Orders.AddAsync(order, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return new CheckoutOrderResult(ToResponse(order), null);
     }
 
-    public OrderResponse? Update(Guid id, UpdateOrderRequest request)
+    // CHG-20261106-003-DATABASE-INFRASTRUCTURE
+    // Change: Reconciles tracked line items without replacing the order aggregate.
+    public async Task<OrderResponse?> UpdateAsync(
+        Guid id,
+        UpdateOrderRequest request,
+        CancellationToken cancellationToken)
     {
-        lock (_sync)
+        var order = await unitOfWork.Orders.GetByIdWithItemsAsync(id, cancellationToken);
+        if (order is null)
         {
-            if (!_orders.TryGetValue(id, out var current))
-            {
-                return null;
-            }
-
-            var updated = new Order
-            {
-                Id = current.Id,
-                CustomerName = request.CustomerName,
-                CustomerEmail = request.CustomerEmail,
-                Status = request.Status,
-                Items = request.Items.Select(ToModel).ToList(),
-                CreatedAt = current.CreatedAt,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            _orders[id] = updated;
-            return ToResponse(updated);
+            return null;
         }
+
+        order.CustomerName = request.CustomerName;
+        order.CustomerEmail = request.CustomerEmail;
+        order.Status = request.Status;
+        var existingItems = order.Items.ToArray();
+        var retainedItemCount = Math.Min(existingItems.Length, request.Items.Count);
+        for (var index = 0; index < retainedItemCount; index++)
+        {
+            CopyItemValues(request.Items[index], existingItems[index]);
+        }
+
+        for (var index = retainedItemCount; index < existingItems.Length; index++)
+        {
+            unitOfWork.OrderItems.Delete(existingItems[index]);
+            order.Items.Remove(existingItems[index]);
+        }
+
+        for (var index = retainedItemCount; index < request.Items.Count; index++)
+        {
+            order.Items.Add(ToModel(request.Items[index], order));
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return ToResponse(order);
     }
 
-    public bool Delete(Guid id)
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
-        lock (_sync)
+        if (!await unitOfWork.Orders.DeleteAsync(id, cancellationToken))
         {
-            return _orders.Remove(id);
+            return false;
         }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
-    private static Order CreateSeedOrder(
-        string id,
+    private static Order CreateOrder(
         string customerName,
         string customerEmail,
-        OrderStatus status,
-        int daysAgo,
-        params (string ProductId, string ProductName, int Quantity, decimal UnitPrice)[] items) =>
-        new()
+        IReadOnlyList<OrderItemRequest> items)
+    {
+        var order = new Order
         {
-            Id = Guid.Parse(id),
             CustomerName = customerName,
-            CustomerEmail = customerEmail,
-            Status = status,
-            CreatedAt = DateTime.UtcNow.AddDays(-daysAgo),
-            Items = items.Select(item => new OrderItem
-            {
-                ProductId = Guid.Parse(item.ProductId),
-                ProductName = item.ProductName,
-                Quantity = item.Quantity,
-                UnitPrice = item.UnitPrice
-            }).ToList()
+            CustomerEmail = customerEmail
         };
+        order.Items = items.Select(item => ToModel(item, order)).ToList();
+        return order;
+    }
 
-    private static OrderItem ToModel(OrderItemRequest item) =>
+    private static OrderItem ToModel(OrderItemRequest item, Order order) =>
         new()
         {
+            Order = order,
+            OrderId = order.Id,
             ProductId = item.ProductId,
             ProductName = item.ProductName,
             Quantity = item.Quantity,
             UnitPrice = item.UnitPrice
         };
+
+    private static void CopyItemValues(OrderItemRequest source, OrderItem destination)
+    {
+        destination.ProductId = source.ProductId;
+        destination.ProductName = source.ProductName;
+        destination.Quantity = source.Quantity;
+        destination.UnitPrice = source.UnitPrice;
+    }
+
+    private static bool EmailMatches(Order order, string email) =>
+        string.Equals(order.CustomerEmail.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private static OrderResponse ToResponse(Order order) =>
         new(

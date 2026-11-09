@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EShop.ServiceDefaults\EShop.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\EShop.Infrastructure\EShop.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,11 +3,12 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EShop.ApiService.Contracts;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
 namespace EShop.ApiService.Tests;
 
+// CHG-20261106-003-DATABASE-INFRASTRUCTURE
+// Change: Runs order history assertions against isolated, migrated SQLite databases.
 // CHG-20261106-002-MY-ORDERS
 // Purpose: Verifies customer-scoped order history and ID+email order lookup.
 public sealed class OrderHistoryEndpointTests
@@ -24,7 +25,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrders_WithEmail_ReturnsOnlyThatCustomersOrdersCaseInsensitively()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         var orders = await client.GetFromJsonAsync<List<OrderResponse>>(
@@ -37,7 +38,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrders_WithUnknownEmail_ReturnsEmptyList()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         var orders = await client.GetFromJsonAsync<List<OrderResponse>>(
@@ -49,7 +50,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrders_WithInvalidEmail_ReturnsBadRequest()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/api/orders?customerEmail=not-an-email");
@@ -60,7 +61,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrders_WithoutEmail_ReturnsAllOrders()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         var orders = await client.GetFromJsonAsync<List<OrderResponse>>("/api/orders", JsonOptions);
@@ -71,7 +72,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrderById_WithMatchingEmail_ReturnsOrder()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         var order = await client.GetFromJsonAsync<OrderResponse>(
@@ -83,7 +84,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrderById_WithAnotherCustomersEmail_ReturnsNotFound()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync(
@@ -95,7 +96,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrderById_WithInvalidEmail_ReturnsBadRequest()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync($"/api/orders/{JordanOrderId}?customerEmail=bad");
@@ -106,7 +107,7 @@ public sealed class OrderHistoryEndpointTests
     [Fact]
     public async Task GetOrderById_WithoutEmail_StillReturnsOrder()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new DatabaseTestApplicationFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync($"/api/orders/{JordanOrderId}");

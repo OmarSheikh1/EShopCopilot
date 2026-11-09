@@ -1,3 +1,4 @@
+### CHG-20261106-003-DATABASE-INFRASTRUCTURE: CRUD operations now persist in SQLite
 @ApiService_HostAddress = http://localhost:5318
 @ProductId = 10000000-0000-0000-0000-000000000001
 @OrderId = 20000000-0000-0000-0000-000000000001

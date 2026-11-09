@@ -1,7 +1,9 @@
 
 namespace EShop.ApiService.Models;
 
-public class Product
+// CHG-20261106-003-DATABASE-INFRASTRUCTURE
+// Change: Makes product timestamps and concurrency state persistable by EF Core.
+public sealed class Product : IAuditableEntity, IConcurrencyTracked
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -22,4 +24,6 @@ public class Product
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }
+
+    public int Version { get; set; }
 }

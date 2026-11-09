@@ -7,22 +7,24 @@ namespace EShop.ApiService.Endpoints;
 
 public static class ProductEndpoints
 {
+    // CHG-20261106-003-DATABASE-INFRASTRUCTURE
+    // Change: Awaits database-backed operations and forwards request cancellation.
     public static IEndpointRouteBuilder MapProductEndpoints(this IEndpointRouteBuilder app)
     {
         var products = app.MapGroup("/api/products")
             .WithTags("Products");
 
-        products.MapGet("/", (IProductService service, CancellationToken cancellationToken) =>
-                TypedResults.Ok(service.GetAll()))
+        products.MapGet("/", async (IProductService service, CancellationToken cancellationToken) =>
+                TypedResults.Ok(await service.GetAllAsync(cancellationToken)))
             .WithName("GetProducts")
             .WithSummary("Get all products")
             .WithDescription("Returns the complete product catalog.")
             .Produces<IReadOnlyList<ProductResponse>>(StatusCodes.Status200OK);
 
-        products.MapGet("/{id:guid}", Results<Ok<ProductResponse>, NotFound> (
+        products.MapGet("/{id:guid}", async Task<Results<Ok<ProductResponse>, NotFound>> (
                 Guid id, IProductService service, CancellationToken cancellationToken) =>
             {
-                var product = service.GetById(id);
+                var product = await service.GetByIdAsync(id, cancellationToken);
                 return product is null ? TypedResults.NotFound() : TypedResults.Ok(product);
             })
             .WithName("GetProductById")
@@ -31,21 +33,27 @@ public static class ProductEndpoints
             .Produces<ProductResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        products.MapPost("/", (CreateProductRequest request, IProductService service, CancellationToken cancellationToken) =>
+        products.MapPost("/", async (
+            CreateProductRequest request,
+            IProductService service,
+            CancellationToken cancellationToken) =>
             {
-                var product = service.Create(request);
+                var product = await service.CreateAsync(request, cancellationToken);
                 return TypedResults.Created($"/api/products/{product.Id}", product);
             })
             .WithName("CreateProduct")
             .WithSummary("Create a product")
-            .WithDescription("Adds a product to the in-memory catalog.")
+            .WithDescription("Persists a product in the catalog.")
             .Produces<ProductResponse>(StatusCodes.Status201Created)
             .ProducesValidationProblem();
 
-        products.MapPut("/{id:guid}", Results<Ok<ProductResponse>, NotFound> (
-                Guid id, UpdateProductRequest request, IProductService service, CancellationToken cancellationToken) =>
+        products.MapPut("/{id:guid}", async Task<Results<Ok<ProductResponse>, NotFound>> (
+                Guid id,
+                UpdateProductRequest request,
+                IProductService service,
+                CancellationToken cancellationToken) =>
             {
-                var product = service.Update(id, request);
+                var product = await service.UpdateAsync(id, request, cancellationToken);
                 return product is null ? TypedResults.NotFound() : TypedResults.Ok(product);
             })
             .WithName("UpdateProduct")
@@ -55,10 +63,14 @@ public static class ProductEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesValidationProblem();
 
-        products.MapDelete("/{id:guid}", Results<NoContent, NotFound> (
-                Guid id, IProductService service, CancellationToken cancellationToken) =>
+        products.MapDelete("/{id:guid}", async Task<Results<NoContent, NotFound>> (
+                Guid id,
+                IProductService service,
+                CancellationToken cancellationToken) =>
             {
-                return service.Delete(id) ? TypedResults.NoContent() : TypedResults.NotFound();
+                return await service.DeleteAsync(id, cancellationToken)
+                    ? TypedResults.NoContent()
+                    : TypedResults.NotFound();
             })
             .WithName("DeleteProduct")
             .WithSummary("Delete a product")

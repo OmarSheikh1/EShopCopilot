@@ -66,6 +66,9 @@ public static class Extensions
             .WithTracing(tracing =>
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
+                    // CHG-20261106-003-DATABASE-INFRASTRUCTURE
+                    // Change: Collects EF Core database command activities.
+                    .AddSource("Microsoft.EntityFrameworkCore")
                     .AddAspNetCoreInstrumentation(tracing =>
                         // Exclude health check requests from tracing
                         tracing.Filter = context =>

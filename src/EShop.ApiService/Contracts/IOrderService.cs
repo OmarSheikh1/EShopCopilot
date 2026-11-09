@@ -1,24 +1,36 @@
 namespace EShop.ApiService.Contracts;
 
+// CHG-20261106-003-DATABASE-INFRASTRUCTURE
+// Change: Order operations now expose asynchronous cancellation-aware persistence calls.
 public interface IOrderService
 {
-    IReadOnlyList<OrderResponse> GetAll();
+    Task<IReadOnlyList<OrderResponse>> GetAllAsync(CancellationToken cancellationToken);
 
-    OrderResponse? GetById(Guid id);
+    Task<OrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
     // CHG-20261106-002-MY-ORDERS
     // Purpose: Customer-scoped order history and single-order lookup by ID and email.
-    IReadOnlyList<OrderResponse> GetByCustomerEmail(string email);
+    Task<IReadOnlyList<OrderResponse>> GetByCustomerEmailAsync(
+        string email,
+        CancellationToken cancellationToken);
 
-    OrderResponse? GetByIdAndEmail(Guid id, string email);
+    Task<OrderResponse?> GetByIdAndEmailAsync(
+        Guid id,
+        string email,
+        CancellationToken cancellationToken);
 
-    OrderResponse Create(CreateOrderRequest request);
+    Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken cancellationToken);
 
     // CHG-20261106-001-SHOPPING-CART
     // Change: Adds server-validated checkout while keeping order creation in this service.
-    CheckoutOrderResult Checkout(CheckoutOrderRequest request);
+    Task<CheckoutOrderResult> CheckoutAsync(
+        CheckoutOrderRequest request,
+        CancellationToken cancellationToken);
 
-    OrderResponse? Update(Guid id, UpdateOrderRequest request);
+    Task<OrderResponse?> UpdateAsync(
+        Guid id,
+        UpdateOrderRequest request,
+        CancellationToken cancellationToken);
 
-    bool Delete(Guid id);
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
 }

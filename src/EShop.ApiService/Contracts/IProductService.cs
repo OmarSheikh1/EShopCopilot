@@ -1,14 +1,16 @@
 namespace EShop.ApiService.Contracts;
 
+// CHG-20261106-003-DATABASE-INFRASTRUCTURE
+// Change: Product operations now expose asynchronous cancellation-aware persistence calls.
 public interface IProductService
 {
-    IReadOnlyList<ProductResponse> GetAll();
+    Task<IReadOnlyList<ProductResponse>> GetAllAsync(CancellationToken cancellationToken);
 
-    ProductResponse? GetById(Guid id);
+    Task<ProductResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
-    ProductResponse Create(CreateProductRequest request);
+    Task<ProductResponse> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken);
 
-    ProductResponse? Update(Guid id, UpdateProductRequest request);
+    Task<ProductResponse?> UpdateAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken);
 
-    bool Delete(Guid id);
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
 }

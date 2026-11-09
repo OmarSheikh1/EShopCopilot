@@ -7,6 +7,8 @@ namespace EShop.ApiService.Endpoints;
 
 public static class OrderEndpoints
 {
+    // CHG-20261106-003-DATABASE-INFRASTRUCTURE
+    // Change: Awaits database-backed operations and forwards request cancellation.
     public static IEndpointRouteBuilder MapOrderEndpoints(this IEndpointRouteBuilder app)
     {
         var orders = app.MapGroup("/api/orders")
@@ -14,10 +16,10 @@ public static class OrderEndpoints
 
         // CHG-20261106-001-SHOPPING-CART
         // Purpose: Exposes checkout without accepting client-supplied product pricing.
-        orders.MapPost("/checkout", Results<Created<OrderResponse>, NotFound, Conflict<ProblemDetails>> (
+        orders.MapPost("/checkout", async Task<Results<Created<OrderResponse>, NotFound, Conflict<ProblemDetails>>> (
                 CheckoutOrderRequest request, IOrderService service, CancellationToken cancellationToken) =>
             {
-                var result = service.Checkout(request);
+                var result = await service.CheckoutAsync(request, cancellationToken);
                 if (result.Order is { } order)
                 {
                     return TypedResults.Created($"/api/orders/{order.Id}", order);
@@ -51,16 +53,16 @@ public static class OrderEndpoints
 
         // CHG-20261106-002-MY-ORDERS
         // Change: Optional customerEmail filter returns only that customer's orders.
-        orders.MapGet("/", Results<Ok<IReadOnlyList<OrderResponse>>, ValidationProblem> (
+        orders.MapGet("/", async Task<Results<Ok<IReadOnlyList<OrderResponse>>, ValidationProblem>> (
                 string? customerEmail, IOrderService service, CancellationToken cancellationToken) =>
             {
                 if (customerEmail is null)
                 {
-                    return TypedResults.Ok(service.GetAll());
+                    return TypedResults.Ok(await service.GetAllAsync(cancellationToken));
                 }
 
                 return IsValidEmail(customerEmail)
-                    ? TypedResults.Ok(service.GetByCustomerEmail(customerEmail))
+                    ? TypedResults.Ok(await service.GetByCustomerEmailAsync(customerEmail, cancellationToken))
                     : InvalidEmail();
             })
             .WithName("GetOrders")
@@ -71,7 +73,7 @@ public static class OrderEndpoints
 
         // CHG-20261106-002-MY-ORDERS
         // Change: Optional customerEmail requires both ID and email to match; mismatches return 404.
-        orders.MapGet("/{id:guid}", Results<Ok<OrderResponse>, NotFound, ValidationProblem> (
+        orders.MapGet("/{id:guid}", async Task<Results<Ok<OrderResponse>, NotFound, ValidationProblem>> (
                 Guid id, string? customerEmail, IOrderService service, CancellationToken cancellationToken) =>
             {
                 if (customerEmail is not null && !IsValidEmail(customerEmail))
@@ -80,8 +82,8 @@ public static class OrderEndpoints
                 }
 
                 var order = customerEmail is null
-                    ? service.GetById(id)
-                    : service.GetByIdAndEmail(id, customerEmail);
+                    ? await service.GetByIdAsync(id, cancellationToken)
+                    : await service.GetByIdAndEmailAsync(id, customerEmail, cancellationToken);
                 return order is null ? TypedResults.NotFound() : TypedResults.Ok(order);
             })
             .WithName("GetOrderById")
@@ -91,21 +93,27 @@ public static class OrderEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesValidationProblem();
 
-        orders.MapPost("/", (CreateOrderRequest request, IOrderService service, CancellationToken cancellationToken) =>
+        orders.MapPost("/", async (
+            CreateOrderRequest request,
+            IOrderService service,
+            CancellationToken cancellationToken) =>
             {
-                var order = service.Create(request);
+                var order = await service.CreateAsync(request, cancellationToken);
                 return TypedResults.Created($"/api/orders/{order.Id}", order);
             })
             .WithName("CreateOrder")
             .WithSummary("Create an order")
-            .WithDescription("Adds an order to the in-memory order catalog.")
+            .WithDescription("Persists an order and its line items.")
             .Produces<OrderResponse>(StatusCodes.Status201Created)
             .ProducesValidationProblem();
 
-        orders.MapPut("/{id:guid}", Results<Ok<OrderResponse>, NotFound> (
-                Guid id, UpdateOrderRequest request, IOrderService service, CancellationToken cancellationToken) =>
+        orders.MapPut("/{id:guid}", async Task<Results<Ok<OrderResponse>, NotFound>> (
+                Guid id,
+                UpdateOrderRequest request,
+                IOrderService service,
+                CancellationToken cancellationToken) =>
             {
-                var order = service.Update(id, request);
+                var order = await service.UpdateAsync(id, request, cancellationToken);
                 return order is null ? TypedResults.NotFound() : TypedResults.Ok(order);
             })
             .WithName("UpdateOrder")
@@ -115,10 +123,14 @@ public static class OrderEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesValidationProblem();
 
-        orders.MapDelete("/{id:guid}", Results<NoContent, NotFound> (
-                Guid id, IOrderService service, CancellationToken cancellationToken) =>
+        orders.MapDelete("/{id:guid}", async Task<Results<NoContent, NotFound>> (
+                Guid id,
+                IOrderService service,
+                CancellationToken cancellationToken) =>
             {
-                return service.Delete(id) ? TypedResults.NoContent() : TypedResults.NotFound();
+                return await service.DeleteAsync(id, cancellationToken)
+                    ? TypedResults.NoContent()
+                    : TypedResults.NotFound();
             })
             .WithName("DeleteOrder")
             .WithSummary("Delete an order")

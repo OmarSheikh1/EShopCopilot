@@ -1,7 +1,9 @@
 
 namespace EShop.ApiService.Models;
 
-public class Order
+// CHG-20261106-003-DATABASE-INFRASTRUCTURE
+// Change: Persists orders and their items with SQLite-friendly concurrency tokens.
+public sealed class Order : IAuditableEntity, IConcurrencyTracked
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -19,6 +21,8 @@ public class Order
 
     public decimal TotalAmount => Items.Sum(
         item => item.UnitPrice * item.Quantity);
+
+    public int Version { get; set; }
 }
 
 public enum OrderStatus
